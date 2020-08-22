@@ -7,25 +7,28 @@ from subprocess import check_output
 from threading import Thread
 from time import sleep
 
-remoteFolder = ''
-localFolder = ''
-currentPlatform = platform.system()
-baseUserFolder = os.path.expanduser(r'~/')
-siteDll = 'MySite.dll'
-baseRemoteFolder = r'//192.168.1.1/Seagate Expansion Drive'
-versionNumberFileName = 'versionNumber.txt'
+CURRENT_PLATFORM = platform.system()
+BASE_USER_FOLDER = os.path.expanduser(r'~/')
+SITE_DLL = 'MySite.dll'
+BASE_REMOTE_FOLDER = r'//192.168.1.1/Seagate Expansion Drive'
+VERSION_NUMBER_FILE_NAME = 'versionNumber.txt'
+
+remote_folder = ''
+local_folder = ''
+
 
 class ProcessInfo:
-    Pid = ""
-    Name = ""
-    Version = ""
-    CommandLine = ""
+    pid = ""
+    name = ""
+    version = ""
+    command_line = ""
 
-    def __init__(self, pid, name, version, commandLine):
-        self.Pid = pid
-        self.Name = name
-        self.Version = version
-        self.CommandLine = commandLine
+    def __init__(self, pid, name, version, command_line):
+        self.pid = pid
+        self.name = name
+        self.version = version
+        self.command_line = command_line
+
 
 def copy3(src, dst, *, follow_symlinks=True):
     """Fix of copy2 method, that not works with cifs file system
@@ -36,135 +39,149 @@ def copy3(src, dst, *, follow_symlinks=True):
     os.utime(dst, (os.path.getatime(dst), os.path.getmtime(dst)))
     return dst
 
-def mountRemoteFolder():
-    mountLocalFolder = os.path.join(baseUserFolder, r'Shared/Seagate Expansion Drive')
-    mountResult = subprocess.getoutput(f'sudo mount.cifs "{baseRemoteFolder}" "{mountLocalFolder}" -o user=root,password=guest,dir_mode=0777,file_mode=0777')
-    if not mountResult:
+
+def mount_remote_folder():
+    mount_local_folder = os.path.join(BASE_USER_FOLDER, r'Shared/Seagate Expansion Drive')
+    mount_result = subprocess.getoutput(
+        f'sudo mount.cifs "{BASE_REMOTE_FOLDER}" "{mount_local_folder}" -o user=root,password=guest,dir_mode=0777,file_mode=0777')
+    if not mount_result:
         return
-    raise Exception(f"Mount error. {mountResult}")
+    raise Exception(f"Mount error. {mount_result}")
+
 
 def initialize():
-    global remoteFolder
-    global localFolder
-    global baseUserFolder
-    if currentPlatform == 'Windows':
-        remoteFolder = os.path.join(baseRemoteFolder, r'MySite')
-        localFolder = os.path.join(baseUserFolder, r'Desktop/MySite')
-    elif currentPlatform == 'Linux':
+    global remote_folder
+    global local_folder
+    global BASE_USER_FOLDER
+    if CURRENT_PLATFORM == 'Windows':
+        remote_folder = os.path.join(BASE_REMOTE_FOLDER, r'MySite')
+        local_folder = os.path.join(BASE_USER_FOLDER, r'Desktop/MySite')
+    elif CURRENT_PLATFORM == 'Linux':
         user = os.getenv("SUDO_USER")
         if user is None:
             user = os.getenv("USER")
         if user is None:
             raise Exception('Current user is None.')
-        remoteFolder = os.path.join(baseUserFolder, r'Shared/Seagate Expansion Drive/MySite')
-        localFolder = os.path.join(baseUserFolder, r'Desktop/MySite')
-        mountRemoteFolder()
+        remote_folder = os.path.join(BASE_USER_FOLDER, r'Shared/Seagate Expansion Drive/MySite')
+        local_folder = os.path.join(BASE_USER_FOLDER, r'Desktop/MySite')
+        mount_remote_folder()
     else:
         raise Exception('RemoteFolder and LocalFolder not implemented for current platform.')
 
-def representsInt(s):
+
+def represents_int(s):
     try:
         int(s)
         return True
     except ValueError:
         return False
 
-def removeSpaces(lines):
+
+def remove_spaces(lines):
     return list(map(lambda x: " ".join(x.strip().split()), lines))
 
-def getProcessInfos(name):
-    if currentPlatform == 'Windows':
+
+def get_process_infos(name):
+    if CURRENT_PLATFORM == 'Windows':
         lines = subprocess.getoutput('wmic process where caption="dotnet.exe" get Commandline, ProcessId').split('\n')
         lines = list(map(lambda x: " ".join(x.strip().split()), lines))
-        def getProcessInfo(s):
+
+        def get_process_info(s):
             i = len(s) - 1
-            startIndex = -1
+            start_index = -1
             while i > 0:
                 if s[i] == " ":
-                    startIndex = i + 1
+                    start_index = i + 1
                     break
                 i -= 1
-            pid = s[startIndex:]
-            if representsInt(pid):
-                commandArguments = s[:startIndex - 1]
-                handleUtilityPath = os.path.dirname(os.path.realpath(__file__))
-                versionResult = subprocess.run([f"handle", "-p", "dotnet.exe"], cwd=handleUtilityPath, universal_newlines=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
-                versionResult = list(filter(lambda x: x,versionResult.stdout.split('\n')))
-                versionResult = removeSpaces([versionResult[5]])[0]
-                length = len(versionResult)
-                version = versionResult[length - 7:]
-                return ProcessInfo(pid, name, version, commandArguments)
+            pid = s[start_index:]
+            if represents_int(pid):
+                command_arguments = s[:start_index - 1]
+                handle_utility_path = os.path.dirname(os.path.realpath(__file__))
+                version_result = subprocess.run([f"handle", "-p", "dotnet.exe"], cwd=handle_utility_path,
+                                               universal_newlines=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+                version_result = list(filter(lambda x: x, version_result.stdout.split('\n')))
+                version_result = remove_spaces([version_result[5]])[0]
+                length = len(version_result)
+                version = version_result[length - 7:]
+                return ProcessInfo(pid, name, version, command_arguments)
             return None
 
-        processInfos = list(filter(lambda pair: pair is not None, map(lambda x: getProcessInfo(x), lines)))
-        return processInfos
-    elif currentPlatform == 'Linux':
-        processInfos = []
+        process_infos = list(filter(lambda pair: pair is not None, map(lambda x: get_process_info(x), lines)))
+        return process_infos
+    elif CURRENT_PLATFORM == 'Linux':
+        process_infos = []
         try:
             lines = check_output(["ps -eo pid,cmd | grep [d]otnet"], shell=True, universal_newlines=True).split('\n')
-            lines = removeSpaces(lines)
+            lines = remove_spaces(lines)
         except subprocess.CalledProcessError as e:
-            if(e.returncode != 1):
+            if (e.returncode != 1):
                 raise
-            return processInfos
-        def getProcessInfo(s):
+            return process_infos
+
+        def get_process_info(s):
             i = 0
-            endIndex = -1
+            end_index = -1
             while i < len(s):
                 if s[i] == " ":
-                    endIndex = i
+                    end_index = i
                     break
                 i += 1
-            pid = s[:endIndex]
-            if representsInt(pid):
-                commandArguments = s[endIndex + 1:]
-                length = len(commandArguments)
-                versionResult = check_output([f"pwdx {pid}"], shell=True, universal_newlines=True).split('\n')
-                versionResult = removeSpaces(versionResult)[0]
-                version = versionResult[length - 8:]
-                return ProcessInfo(pid, name, version, commandArguments)
+            pid = s[:end_index]
+            if represents_int(pid):
+                command_arguments = s[end_index + 1:]
+                length = len(command_arguments)
+                version_result = check_output([f"pwdx {pid}"], shell=True, universal_newlines=True).split('\n')
+                version_result = remove_spaces(version_result)[0]
+                version = version_result[length - 8:]
+                return ProcessInfo(pid, name, version, command_arguments)
             return None
 
-        processInfos = list(filter(lambda pair: pair is not None, map(lambda x: getProcessInfo(x), lines)))
-        return processInfos
+        process_infos = list(filter(lambda pair: pair is not None, map(lambda x: get_process_info(x), lines)))
+        return process_infos
     else:
         raise Exception('getPid not implemented for current platform.')
 
-def processRunner():
-    localVersionNumberFile = os.path.join(localFolder, versionNumberFileName)
-    if not os.path.exists(localVersionNumberFile):
+
+def process_runner():
+    local_version_number_file = os.path.join(local_folder, VERSION_NUMBER_FILE_NAME)
+    if not os.path.exists(local_version_number_file):
         return
-    file = open(localVersionNumberFile, 'r')
-    currentVersion = file.read()
+    file = open(local_version_number_file, 'r')
+    current_version = file.read()
     file.close()
-    infos = getProcessInfos(siteDll)
-    sameVersionProcesses = list(filter(lambda x: x.Version == currentVersion, infos))
-    if len(sameVersionProcesses) > 0:
-        sameVersionProcess = sameVersionProcesses[0]
+    infos = get_process_infos(SITE_DLL)
+    same_version_processes = list(filter(lambda x: x.version == current_version, infos))
+    if len(same_version_processes) > 0:
+        same_version_process = same_version_processes[0]
     else:
-        sameVersionProcess = None
+        same_version_process = None
     for info in infos:
-        if sameVersionProcess != info:
-            os.kill(int(info.Pid), signal.SIGTERM)
-            print(f"Process killed: {info.Pid}")
-    if sameVersionProcess is not None:
+        if same_version_process != info:
+            os.kill(int(info.pid), signal.SIGTERM)
+            print(f"Process killed: {info.pid}")
+    if same_version_process is not None:
         return
 
-    siteDirectory = os.path.join(localFolder, currentVersion)
-    if currentPlatform == 'Windows':
-        process = subprocess.run(['dotnet', siteDll], cwd=siteDirectory, stdout=subprocess.PIPE, stderr=subprocess.PIPE, creationflags=subprocess.DETACHED_PROCESS | subprocess.CREATE_NEW_PROCESS_GROUP)
-    elif currentPlatform == 'Linux':
-        print(f"Process starting: dotnet {siteDirectory}")
-        process = subprocess.run(['/home/pi/dotnet-arm32/dotnet', siteDll], cwd=siteDirectory, stdout=subprocess.PIPE, stderr=subprocess.PIPE, preexec_fn=os.setpgrp)
+    site_directory = os.path.join(local_folder, current_version)
+    if CURRENT_PLATFORM == 'Windows':
+        process = subprocess.run(['dotnet', SITE_DLL], cwd=site_directory, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+                                 creationflags=subprocess.DETACHED_PROCESS | subprocess.CREATE_NEW_PROCESS_GROUP)
+    elif CURRENT_PLATFORM == 'Linux':
+        print(f"Process starting: dotnet {site_directory}")
+        process = subprocess.run(['/home/pi/dotnet-arm32/dotnet', SITE_DLL], cwd=site_directory, stdout=subprocess.PIPE,
+                                 stderr=subprocess.PIPE, preexec_fn=os.setpgrp)
     else:
         raise Exception('subprocess is not implemented for current platform.')
     print(process.stdout)
+
 
 def remove(path):
     if os.path.isfile(path) or os.path.islink(path):
         os.remove(path)  # remove the file
     elif os.path.isdir(path):
         shutil.rmtree(path)  # remove dir and all contains
+
 
 def copytree(src, dst):
     for item in os.listdir(src):
@@ -180,44 +197,47 @@ def copytree(src, dst):
                 os.remove(d)
             copy3(s, d)
 
-def versionUpdate():
-    remoteVersionNumberFile = os.path.join(remoteFolder, versionNumberFileName)
-    localVersionNumberFile = os.path.join(localFolder, versionNumberFileName)
-    if not os.path.exists(remoteVersionNumberFile):
-        raise Exception(f'{versionNumberFileName} not found in remote folder {remoteVersionNumberFile}.')
-    remoteLastModifyTime = os.path.getmtime(remoteVersionNumberFile)
-    localLastModifyTime = os.path.getmtime(localVersionNumberFile) if os.path.exists(localVersionNumberFile) else 0
-    if remoteLastModifyTime > localLastModifyTime:
-        file = open(remoteVersionNumberFile, 'r')
-        currentVersion = file.read()
-        file.close()
-        if not os.path.exists(os.path.join(remoteFolder, currentVersion)):
-            raise Exception(f'{currentVersion} not found in remote folder.')
-        if not os.path.exists(os.path.join(localFolder, currentVersion)):
-            os.makedirs(os.path.join(localFolder, currentVersion))
-        copytree(os.path.join(remoteFolder, currentVersion), os.path.join(localFolder, currentVersion))
-        copy3(os.path.join(remoteFolder, versionNumberFileName), os.path.join(localFolder, versionNumberFileName))
-        infos = getProcessInfos(siteDll)
-        for info in infos:
-            os.kill(int(info.Pid), signal.SIGTERM)
-        directories = [d for d in os.listdir(localFolder) if os.path.isdir(os.path.join(localFolder, d))]
-        for folder in directories:
-            if (os.path.join(localFolder, folder) != os.path.join(localFolder, currentVersion)):
-                shutil.rmtree(os.path.join(localFolder, folder), ignore_errors=False, onerror=None)
 
-def processRunnerLoop():
+def version_update():
+    remote_version_number_file = os.path.join(remote_folder, VERSION_NUMBER_FILE_NAME)
+    local_version_number_file = os.path.join(local_folder, VERSION_NUMBER_FILE_NAME)
+    if not os.path.exists(remote_version_number_file):
+        raise Exception(f'{VERSION_NUMBER_FILE_NAME} not found in remote folder {remote_version_number_file}.')
+    remote_last_modify_time = os.path.getmtime(remote_version_number_file)
+    local_last_modify_time = os.path.getmtime(local_version_number_file) if os.path.exists(local_version_number_file) else 0
+    if remote_last_modify_time > local_last_modify_time:
+        file = open(remote_version_number_file, 'r')
+        current_version = file.read()
+        file.close()
+        if not os.path.exists(os.path.join(remote_folder, current_version)):
+            raise Exception(f'{current_version} not found in remote folder.')
+        if not os.path.exists(os.path.join(local_folder, current_version)):
+            os.makedirs(os.path.join(local_folder, current_version))
+        copytree(os.path.join(remote_folder, current_version), os.path.join(local_folder, current_version))
+        copy3(os.path.join(remote_folder, VERSION_NUMBER_FILE_NAME), os.path.join(local_folder, VERSION_NUMBER_FILE_NAME))
+        infos = get_process_infos(SITE_DLL)
+        for info in infos:
+            os.kill(int(info.pid), signal.SIGTERM)
+        directories = [d for d in os.listdir(local_folder) if os.path.isdir(os.path.join(local_folder, d))]
+        for folder in directories:
+            if os.path.join(local_folder, folder) != os.path.join(local_folder, current_version):
+                shutil.rmtree(os.path.join(local_folder, folder), ignore_errors=False, onerror=None)
+
+
+def process_runner_loop():
     while True:
         try:
             sleep(5)
-            processRunner()
+            process_runner()
         except Exception as e:
             print(e)
 
-def versionUpdateLoop():
+
+def version_update_loop():
     while True:
         try:
             sleep(5)
-            versionUpdate()
+            version_update()
         except Exception as e:
             print(e)
 
@@ -225,9 +245,7 @@ def versionUpdateLoop():
 def main():
     initialize()
 
-    threads = []
-    threads.append(Thread(target=versionUpdateLoop, args=()))
-    threads.append(Thread(target=processRunnerLoop, args=()))
+    threads = [Thread(target=version_update_loop, args=()), Thread(target=process_runner_loop, args=())]
     for t in threads:
         t.start()
     for t in threads:
