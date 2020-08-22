@@ -10,7 +10,10 @@ from time import sleep
 remoteFolder = ''
 localFolder = ''
 currentPlatform = platform.system()
-baseUserFolder = ''
+baseUserFolder = os.path.expanduser(r'~/')
+siteDll = 'MySite.dll'
+baseRemoteFolder = r'//192.168.1.1/Seagate Expansion Drive'
+versionNumberFileName = 'versionNumber.txt'
 
 class ProcessInfo:
     Pid = ""
@@ -34,7 +37,6 @@ def copy3(src, dst, *, follow_symlinks=True):
     return dst
 
 def mountRemoteFolder():
-    baseRemoteFolder = r'//192.168.1.1/Seagate Expansion Drive'
     mountLocalFolder = os.path.join(baseUserFolder, r'Shared/Seagate Expansion Drive')
     mountResult = subprocess.getoutput(f'sudo mount.cifs "{baseRemoteFolder}" "{mountLocalFolder}" -o user=root,password=guest,dir_mode=0777,file_mode=0777')
     if not mountResult:
@@ -46,8 +48,7 @@ def initialize():
     global localFolder
     global baseUserFolder
     if currentPlatform == 'Windows':
-        baseUserFolder = os.path.expanduser(r'~/')
-        remoteFolder = r'//192.168.1.1/Seagate Expansion Drive/MySite'
+        remoteFolder = os.path.join(baseRemoteFolder, r'MySite')
         localFolder = os.path.join(baseUserFolder, r'Desktop/MySite')
     elif currentPlatform == 'Linux':
         user = os.getenv("SUDO_USER")
@@ -55,8 +56,6 @@ def initialize():
             user = os.getenv("USER")
         if user is None:
             raise Exception('Current user is None.')
-        #baseUserFolder = f'/home/{user}/'
-        baseUserFolder = os.path.expanduser(r'~/')
         remoteFolder = os.path.join(baseUserFolder, r'Shared/Seagate Expansion Drive/MySite')
         localFolder = os.path.join(baseUserFolder, r'Desktop/MySite')
         mountRemoteFolder()
@@ -101,20 +100,6 @@ def getProcessInfos(name):
         return processInfos
     elif currentPlatform == 'Linux':
         processInfos = []
-        # try:
-        #     result = check_output(["pidof","dotnet"])
-        # except subprocess.CalledProcessError as e:
-        #     if(e.returncode != 1):
-        #         raise
-        #     return processInfos
-        # pidList = map(int,result.split())
-        # for pid in pidList:
-        #     cmd = subprocess.getoutput(f"ps -p {pid} -o cmd=")
-        #     length = len(cmd) - len(name)
-        #     version = cmd[:length - 1][length - 8:]
-        #     info = ProcessInfo(pid, name, version, cmd)
-        #     processInfos.append(info)
-        # return processInfos
         try:
             lines = check_output(["ps -eo pid,cmd | grep [d]otnet"], shell=True, universal_newlines=True).split('\n')
             lines = removeSpaces(lines)
@@ -146,13 +131,13 @@ def getProcessInfos(name):
         raise Exception('getPid not implemented for current platform.')
 
 def processRunner():
-    localVersionNumberFile = os.path.join(localFolder, 'versionNumber.txt')
+    localVersionNumberFile = os.path.join(localFolder, versionNumberFileName)
     if not os.path.exists(localVersionNumberFile):
         return
     file = open(localVersionNumberFile, 'r')
     currentVersion = file.read()
     file.close()
-    infos = getProcessInfos('MySite.dll')
+    infos = getProcessInfos(siteDll)
     sameVersionProcesses = list(filter(lambda x: x.Version == currentVersion, infos))
     if len(sameVersionProcesses) > 0:
         sameVersionProcess = sameVersionProcesses[0]
@@ -167,10 +152,10 @@ def processRunner():
 
     siteDirectory = os.path.join(localFolder, currentVersion)
     if currentPlatform == 'Windows':
-        process = subprocess.run(['dotnet', 'MySite.dll'], cwd=siteDirectory, stdout=subprocess.PIPE, stderr=subprocess.PIPE, creationflags=subprocess.DETACHED_PROCESS | subprocess.CREATE_NEW_PROCESS_GROUP)
+        process = subprocess.run(['dotnet', siteDll], cwd=siteDirectory, stdout=subprocess.PIPE, stderr=subprocess.PIPE, creationflags=subprocess.DETACHED_PROCESS | subprocess.CREATE_NEW_PROCESS_GROUP)
     elif currentPlatform == 'Linux':
         print(f"Process starting: dotnet {siteDirectory}")
-        process = subprocess.run(['/home/pi/dotnet-arm32/dotnet', 'MySite.dll'], cwd=siteDirectory, stdout=subprocess.PIPE, stderr=subprocess.PIPE, preexec_fn=os.setpgrp)
+        process = subprocess.run(['/home/pi/dotnet-arm32/dotnet', siteDll], cwd=siteDirectory, stdout=subprocess.PIPE, stderr=subprocess.PIPE, preexec_fn=os.setpgrp)
     else:
         raise Exception('subprocess is not implemented for current platform.')
     print(process.stdout)
@@ -196,10 +181,10 @@ def copytree(src, dst):
             copy3(s, d)
 
 def versionUpdate():
-    remoteVersionNumberFile = os.path.join(remoteFolder, 'versionNumber.txt')
-    localVersionNumberFile = os.path.join(localFolder, 'versionNumber.txt')
+    remoteVersionNumberFile = os.path.join(remoteFolder, versionNumberFileName)
+    localVersionNumberFile = os.path.join(localFolder, versionNumberFileName)
     if not os.path.exists(remoteVersionNumberFile):
-        raise Exception(f'versionNumber.txt not found in remote folder {remoteVersionNumberFile}.')
+        raise Exception(f'{versionNumberFileName} not found in remote folder {remoteVersionNumberFile}.')
     remoteLastModifyTime = os.path.getmtime(remoteVersionNumberFile)
     localLastModifyTime = os.path.getmtime(localVersionNumberFile) if os.path.exists(localVersionNumberFile) else 0
     if remoteLastModifyTime > localLastModifyTime:
@@ -211,8 +196,8 @@ def versionUpdate():
         if not os.path.exists(os.path.join(localFolder, currentVersion)):
             os.makedirs(os.path.join(localFolder, currentVersion))
         copytree(os.path.join(remoteFolder, currentVersion), os.path.join(localFolder, currentVersion))
-        copy3(os.path.join(remoteFolder, 'versionNumber.txt'), os.path.join(localFolder, 'versionNumber.txt'))
-        infos = getProcessInfos('MySite.dll')
+        copy3(os.path.join(remoteFolder, versionNumberFileName), os.path.join(localFolder, versionNumberFileName))
+        infos = getProcessInfos(siteDll)
         for info in infos:
             os.kill(int(info.Pid), signal.SIGTERM)
         directories = [d for d in os.listdir(localFolder) if os.path.isdir(os.path.join(localFolder, d))]
