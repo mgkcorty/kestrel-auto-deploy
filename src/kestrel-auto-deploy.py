@@ -7,14 +7,23 @@ from subprocess import check_output
 from threading import Thread
 from time import sleep
 
+BASE_REMOTE_FOLDER = r'//192.168.1.1/Seagate Expansion Drive'
+IS_UNC = BASE_REMOTE_FOLDER.startswith(r'//') or BASE_REMOTE_FOLDER.startswith(r'\\')
+SITE_DLL = 'MySite.dll'
+VERSION_NUMBER_FILE_NAME = 'versionNumber.txt'
+WINDOWS = 'Windows'
+LINUX = 'Linux'
+WINDOWS_DOTNET_PATH = 'dotnet'
+LINUX_DOTNET_PATH = '/home/pi/dotnet-arm32/dotnet'
 CURRENT_PLATFORM = platform.system()
 BASE_USER_FOLDER = os.path.expanduser(r'~/')
-SITE_DLL = 'MySite.dll'
-BASE_REMOTE_FOLDER = r'//192.168.1.1/Seagate Expansion Drive'
-VERSION_NUMBER_FILE_NAME = 'versionNumber.txt'
-
-remote_folder = ''
-local_folder = ''
+LINUX_MOUNTED_LOCAL_FOLDER = os.path.join(BASE_USER_FOLDER, r'Shared/Seagate Expansion Drive')
+WINDOWS_REMOTE_FOLDER = os.path.join(BASE_REMOTE_FOLDER, r'MySite')
+WINDOWS_LOCAL_FOLDER = os.path.join(BASE_USER_FOLDER, r'Desktop/MySite')
+LINUX_REMOTE_FOLDER = os.path.join(BASE_USER_FOLDER, r'Shared/Seagate Expansion Drive/MySite')
+LINUX_LOCAL_FOLDER = os.path.join(BASE_USER_FOLDER, r'Desktop/MySite')
+REMOTE_FOLDER = WINDOWS_REMOTE_FOLDER if CURRENT_PLATFORM == WINDOWS else LINUX_REMOTE_FOLDER
+LOCAL_FOLDER = WINDOWS_LOCAL_FOLDER if CURRENT_PLATFORM == WINDOWS else LINUX_LOCAL_FOLDER
 
 
 class ProcessInfo:
@@ -40,33 +49,29 @@ def copy3(src, dst, *, follow_symlinks=True):
     return dst
 
 
-def mount_remote_folder():
-    mount_local_folder = os.path.join(BASE_USER_FOLDER, r'Shared/Seagate Expansion Drive')
+def linux_mount_remote_folder():
+	if not IS_UNC:
+        return
+
     mount_result = subprocess.getoutput(
-        f'sudo mount.cifs "{BASE_REMOTE_FOLDER}" "{mount_local_folder}" -o user=root,password=guest,dir_mode=0777,file_mode=0777')
+        f'sudo mount.cifs "{BASE_REMOTE_FOLDER}" "{LINUX_MOUNTED_LOCAL_FOLDER}" -o user=root,password=guest,dir_mode=0777,file_mode=0777')
     if not mount_result:
         return
+
     raise Exception(f"Mount error. {mount_result}")
 
 
 def initialize():
-    global remote_folder
-    global local_folder
-    global BASE_USER_FOLDER
-    if CURRENT_PLATFORM == 'Windows':
-        remote_folder = os.path.join(BASE_REMOTE_FOLDER, r'MySite')
-        local_folder = os.path.join(BASE_USER_FOLDER, r'Desktop/MySite')
-    elif CURRENT_PLATFORM == 'Linux':
+    if CURRENT_PLATFORM != WINDOWS and CURRENT_PLATFORM != LINUX:
+        raise Exception('Platform is not supported.')
+
+    if CURRENT_PLATFORM == LINUX:
         user = os.getenv("SUDO_USER")
         if user is None:
             user = os.getenv("USER")
         if user is None:
             raise Exception('Current user is None.')
-        remote_folder = os.path.join(BASE_USER_FOLDER, r'Shared/Seagate Expansion Drive/MySite')
-        local_folder = os.path.join(BASE_USER_FOLDER, r'Desktop/MySite')
-        mount_remote_folder()
-    else:
-        raise Exception('RemoteFolder and LocalFolder not implemented for current platform.')
+        linux_mount_remote_folder()
 
 
 def represents_int(s):
@@ -82,7 +87,7 @@ def remove_spaces(lines):
 
 
 def get_process_infos(name):
-    if CURRENT_PLATFORM == 'Windows':
+    if CURRENT_PLATFORM == WINDOWS:
         lines = subprocess.getoutput('wmic process where caption="dotnet.exe" get Commandline, ProcessId').split('\n')
         lines = list(map(lambda x: " ".join(x.strip().split()), lines))
 
@@ -109,7 +114,7 @@ def get_process_infos(name):
 
         process_infos = list(filter(lambda pair: pair is not None, map(lambda x: get_process_info(x), lines)))
         return process_infos
-    elif CURRENT_PLATFORM == 'Linux':
+    elif CURRENT_PLATFORM == LINUX:
         process_infos = []
         try:
             lines = check_output(["ps -eo pid,cmd | grep [d]otnet"], shell=True, universal_newlines=True).split('\n')
@@ -144,7 +149,7 @@ def get_process_infos(name):
 
 
 def process_runner():
-    local_version_number_file = os.path.join(local_folder, VERSION_NUMBER_FILE_NAME)
+    local_version_number_file = os.path.join(LOCAL_FOLDER, VERSION_NUMBER_FILE_NAME)
     if not os.path.exists(local_version_number_file):
         return
     file = open(local_version_number_file, 'r')
@@ -163,13 +168,13 @@ def process_runner():
     if same_version_process is not None:
         return
 
-    site_directory = os.path.join(local_folder, current_version)
-    if CURRENT_PLATFORM == 'Windows':
-        process = subprocess.run(['dotnet', SITE_DLL], cwd=site_directory, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+    site_directory = os.path.join(LOCAL_FOLDER, current_version)
+    if CURRENT_PLATFORM == WINDOWS:
+        process = subprocess.run([WINDOWS_DOTNET_PATH, SITE_DLL], cwd=site_directory, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
                                  creationflags=subprocess.DETACHED_PROCESS | subprocess.CREATE_NEW_PROCESS_GROUP)
-    elif CURRENT_PLATFORM == 'Linux':
+    elif CURRENT_PLATFORM == LINUX:
         print(f"Process starting: dotnet {site_directory}")
-        process = subprocess.run(['/home/pi/dotnet-arm32/dotnet', SITE_DLL], cwd=site_directory, stdout=subprocess.PIPE,
+        process = subprocess.run([LINUX_DOTNET_PATH, SITE_DLL], cwd=site_directory, stdout=subprocess.PIPE,
                                  stderr=subprocess.PIPE, preexec_fn=os.setpgrp)
     else:
         raise Exception('subprocess is not implemented for current platform.')
@@ -199,8 +204,8 @@ def copytree(src, dst):
 
 
 def version_update():
-    remote_version_number_file = os.path.join(remote_folder, VERSION_NUMBER_FILE_NAME)
-    local_version_number_file = os.path.join(local_folder, VERSION_NUMBER_FILE_NAME)
+    remote_version_number_file = os.path.join(REMOTE_FOLDER, VERSION_NUMBER_FILE_NAME)
+    local_version_number_file = os.path.join(LOCAL_FOLDER, VERSION_NUMBER_FILE_NAME)
     if not os.path.exists(remote_version_number_file):
         raise Exception(f'{VERSION_NUMBER_FILE_NAME} not found in remote folder {remote_version_number_file}.')
     remote_last_modify_time = os.path.getmtime(remote_version_number_file)
@@ -209,19 +214,19 @@ def version_update():
         file = open(remote_version_number_file, 'r')
         current_version = file.read()
         file.close()
-        if not os.path.exists(os.path.join(remote_folder, current_version)):
+        if not os.path.exists(os.path.join(REMOTE_FOLDER, current_version)):
             raise Exception(f'{current_version} not found in remote folder.')
-        if not os.path.exists(os.path.join(local_folder, current_version)):
-            os.makedirs(os.path.join(local_folder, current_version))
-        copytree(os.path.join(remote_folder, current_version), os.path.join(local_folder, current_version))
-        copy3(os.path.join(remote_folder, VERSION_NUMBER_FILE_NAME), os.path.join(local_folder, VERSION_NUMBER_FILE_NAME))
+        if not os.path.exists(os.path.join(LOCAL_FOLDER, current_version)):
+            os.makedirs(os.path.join(LOCAL_FOLDER, current_version))
+        copytree(os.path.join(REMOTE_FOLDER, current_version), os.path.join(LOCAL_FOLDER, current_version))
+        copy3(os.path.join(REMOTE_FOLDER, VERSION_NUMBER_FILE_NAME), os.path.join(LOCAL_FOLDER, VERSION_NUMBER_FILE_NAME))
         infos = get_process_infos(SITE_DLL)
         for info in infos:
             os.kill(int(info.pid), signal.SIGTERM)
-        directories = [d for d in os.listdir(local_folder) if os.path.isdir(os.path.join(local_folder, d))]
+        directories = [d for d in os.listdir(LOCAL_FOLDER) if os.path.isdir(os.path.join(LOCAL_FOLDER, d))]
         for folder in directories:
-            if os.path.join(local_folder, folder) != os.path.join(local_folder, current_version):
-                shutil.rmtree(os.path.join(local_folder, folder), ignore_errors=False, onerror=None)
+            if os.path.join(LOCAL_FOLDER, folder) != os.path.join(LOCAL_FOLDER, current_version):
+                shutil.rmtree(os.path.join(LOCAL_FOLDER, folder), ignore_errors=False, onerror=None)
 
 
 def process_runner_loop():
