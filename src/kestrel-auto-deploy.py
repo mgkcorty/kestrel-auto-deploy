@@ -14,7 +14,8 @@ LINUX = 'Linux'
 
 CURRENT_PLATFORM = platform.system()
 CONFIG_FILE_NAME = 'kestrel-auto-deploy-config-win.json' if CURRENT_PLATFORM == WINDOWS else 'kestrel-auto-deploy-config.json'
-CONFIG = json.load(open(CONFIG_FILE_NAME))
+CONFIG_FILE_PATH = os.path.join(os.path.dirname(os.path.realpath(__file__)), CONFIG_FILE_NAME)
+CONFIG = json.load(open(CONFIG_FILE_PATH))
 
 EXECUTABLE_FILE_NAME = CONFIG['ExecutableFileName']
 VERSION_NUMBER_FILE_NAME = CONFIG['VersionNumberFileName']
