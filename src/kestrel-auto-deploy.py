@@ -2,28 +2,26 @@ import platform
 import os
 import signal
 import shutil
+import json
 import subprocess
 from subprocess import check_output
 from threading import Thread
 from time import sleep
 
-BASE_REMOTE_FOLDER = r'//192.168.1.1/Seagate Expansion Drive'
-IS_UNC = BASE_REMOTE_FOLDER.startswith(r'//') or BASE_REMOTE_FOLDER.startswith(r'\\')
-SITE_DLL = 'MySite.dll'
-VERSION_NUMBER_FILE_NAME = 'versionNumber.txt'
+
 WINDOWS = 'Windows'
 LINUX = 'Linux'
-WINDOWS_DOTNET_PATH = 'dotnet'
-LINUX_DOTNET_PATH = '/home/pi/dotnet-arm32/dotnet'
+
 CURRENT_PLATFORM = platform.system()
-BASE_USER_FOLDER = os.path.expanduser(r'~/')
-LINUX_MOUNTED_LOCAL_FOLDER = os.path.join(BASE_USER_FOLDER, r'Shared/Seagate Expansion Drive')
-WINDOWS_REMOTE_FOLDER = os.path.join(BASE_REMOTE_FOLDER, r'MySite')
-WINDOWS_LOCAL_FOLDER = os.path.join(BASE_USER_FOLDER, r'Desktop/MySite')
-LINUX_REMOTE_FOLDER = os.path.join(BASE_USER_FOLDER, r'Shared/Seagate Expansion Drive/MySite')
-LINUX_LOCAL_FOLDER = os.path.join(BASE_USER_FOLDER, r'Desktop/MySite')
-REMOTE_FOLDER = WINDOWS_REMOTE_FOLDER if CURRENT_PLATFORM == WINDOWS else LINUX_REMOTE_FOLDER
-LOCAL_FOLDER = WINDOWS_LOCAL_FOLDER if CURRENT_PLATFORM == WINDOWS else LINUX_LOCAL_FOLDER
+CONFIG_FILE_NAME = 'kestrel-auto-deploy-config-win.json' if CURRENT_PLATFORM == WINDOWS else 'kestrel-auto-deploy-config.json'
+CONFIG = json.load(open(CONFIG_FILE_NAME))
+
+EXECUTABLE_FILE_NAME = CONFIG['ExecutableFileName']
+VERSION_NUMBER_FILE_NAME = CONFIG['VersionNumberFileName']
+DOTNET_PATH = CONFIG['DotNetPath']
+
+REMOTE_FOLDER = CONFIG['RemoteFolder']
+LOCAL_FOLDER = CONFIG['LocalFolder']
 
 
 class ProcessInfo:
@@ -50,11 +48,19 @@ def copy3(src, dst, *, follow_symlinks=True):
 
 
 def linux_mount_remote_folder():
-	if not IS_UNC:
+	if CURRENT_PLATFORM != LINUX:
+		return
+
+    folder_to_mount = CONFIG['FolderToMount']
+    mounted_folder = CONFIG['MountedFolder']
+
+	is_unc = folder_to_mount.startswith(r'//') or folder_to_mount.startswith(r'\\')
+
+	if not is_unc:
         return
 
     mount_result = subprocess.getoutput(
-        f'sudo mount.cifs "{BASE_REMOTE_FOLDER}" "{LINUX_MOUNTED_LOCAL_FOLDER}" -o user=root,password=guest,dir_mode=0777,file_mode=0777')
+        f'sudo mount.cifs "{folder_to_mount}" "{mounted_folder}" -o user=root,password=guest,dir_mode=0777,file_mode=0777')
     if not mount_result:
         return
 
@@ -155,7 +161,7 @@ def process_runner():
     file = open(local_version_number_file, 'r')
     current_version = file.read()
     file.close()
-    infos = get_process_infos(SITE_DLL)
+    infos = get_process_infos(EXECUTABLE_FILE_NAME)
     same_version_processes = list(filter(lambda x: x.version == current_version, infos))
     if len(same_version_processes) > 0:
         same_version_process = same_version_processes[0]
@@ -170,11 +176,11 @@ def process_runner():
 
     site_directory = os.path.join(LOCAL_FOLDER, current_version)
     if CURRENT_PLATFORM == WINDOWS:
-        process = subprocess.run([WINDOWS_DOTNET_PATH, SITE_DLL], cwd=site_directory, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+        process = subprocess.run([DOTNET_PATH, EXECUTABLE_FILE_NAME], cwd=site_directory, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
                                  creationflags=subprocess.DETACHED_PROCESS | subprocess.CREATE_NEW_PROCESS_GROUP)
     elif CURRENT_PLATFORM == LINUX:
         print(f"Process starting: dotnet {site_directory}")
-        process = subprocess.run([LINUX_DOTNET_PATH, SITE_DLL], cwd=site_directory, stdout=subprocess.PIPE,
+        process = subprocess.run([DOTNET_PATH, EXECUTABLE_FILE_NAME], cwd=site_directory, stdout=subprocess.PIPE,
                                  stderr=subprocess.PIPE, preexec_fn=os.setpgrp)
     else:
         raise Exception('subprocess is not implemented for current platform.')
@@ -220,7 +226,7 @@ def version_update():
             os.makedirs(os.path.join(LOCAL_FOLDER, current_version))
         copytree(os.path.join(REMOTE_FOLDER, current_version), os.path.join(LOCAL_FOLDER, current_version))
         copy3(os.path.join(REMOTE_FOLDER, VERSION_NUMBER_FILE_NAME), os.path.join(LOCAL_FOLDER, VERSION_NUMBER_FILE_NAME))
-        infos = get_process_infos(SITE_DLL)
+        infos = get_process_infos(EXECUTABLE_FILE_NAME)
         for info in infos:
             os.kill(int(info.pid), signal.SIGTERM)
         directories = [d for d in os.listdir(LOCAL_FOLDER) if os.path.isdir(os.path.join(LOCAL_FOLDER, d))]

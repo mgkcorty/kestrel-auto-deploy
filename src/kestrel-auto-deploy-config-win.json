@@ -1,0 +1,7 @@
+{
+	"ExecutableFileName":"MySite.dll",
+	"VersionNumberFileName":"versionNumber.txt",
+	"DotNetPath":"dotnet",
+	"LocalFolder":"C:/Users/MyUser/Desktop/MySite",
+	"RemoteFolder":"//192.168.1.1/Seagate Expansion Drive/MySite"
+}
