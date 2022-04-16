@@ -30,7 +30,7 @@ class ProcessInfo:
     name = ""
     version = ""
     command_line = ""
-
+    
     def __init__(self, pid, name, version, command_line):
         self.pid = pid
         self.name = name
@@ -49,29 +49,29 @@ def copy3(src, dst, *, follow_symlinks=True):
 
 
 def linux_mount_remote_folder():
-	if CURRENT_PLATFORM != LINUX:
-		return
-
+    if CURRENT_PLATFORM != LINUX:
+        return
+    
     folder_to_mount = CONFIG['FolderToMount']
     mounted_folder = CONFIG['MountedFolder']
-
-	is_unc = folder_to_mount.startswith(r'//') or folder_to_mount.startswith(r'\\')
-
-	if not is_unc:
+    
+    is_unc = folder_to_mount.startswith(r'//') or folder_to_mount.startswith(r'\\')
+    
+    if not is_unc:
         return
-
+    
     mount_result = subprocess.getoutput(
         f'sudo mount.cifs "{folder_to_mount}" "{mounted_folder}" -o user=root,password=guest,dir_mode=0777,file_mode=0777')
     if not mount_result:
         return
-
+    
     raise Exception(f"Mount error. {mount_result}")
 
 
 def initialize():
     if CURRENT_PLATFORM != WINDOWS and CURRENT_PLATFORM != LINUX:
         raise Exception('Platform is not supported.')
-
+    
     if CURRENT_PLATFORM == LINUX:
         user = os.getenv("SUDO_USER")
         if user is None:
@@ -97,7 +97,7 @@ def get_process_infos(name):
     if CURRENT_PLATFORM == WINDOWS:
         lines = subprocess.getoutput('wmic process where caption="dotnet.exe" get Commandline, ProcessId').split('\n')
         lines = list(map(lambda x: " ".join(x.strip().split()), lines))
-
+        
         def get_process_info(s):
             i = len(s) - 1
             start_index = -1
@@ -118,7 +118,7 @@ def get_process_infos(name):
                 version = version_result[length - 7:]
                 return ProcessInfo(pid, name, version, command_arguments)
             return None
-
+        
         process_infos = list(filter(lambda pair: pair is not None, map(lambda x: get_process_info(x), lines)))
         return process_infos
     elif CURRENT_PLATFORM == LINUX:
@@ -130,7 +130,7 @@ def get_process_infos(name):
             if (e.returncode != 1):
                 raise
             return process_infos
-
+        
         def get_process_info(s):
             i = 0
             end_index = -1
@@ -148,7 +148,7 @@ def get_process_infos(name):
                 version = version_result[length - 8:]
                 return ProcessInfo(pid, name, version, command_arguments)
             return None
-
+        
         process_infos = list(filter(lambda pair: pair is not None, map(lambda x: get_process_info(x), lines)))
         return process_infos
     else:
@@ -174,7 +174,7 @@ def process_runner():
             print(f"Process killed: {info.pid}")
     if same_version_process is not None:
         return
-
+    
     site_directory = os.path.join(LOCAL_FOLDER, current_version)
     if CURRENT_PLATFORM == WINDOWS:
         process = subprocess.run([DOTNET_PATH, EXECUTABLE_FILE_NAME], cwd=site_directory, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
@@ -256,7 +256,7 @@ def version_update_loop():
 
 def main():
     initialize()
-
+    
     threads = [Thread(target=version_update_loop, args=()), Thread(target=process_runner_loop, args=())]
     for t in threads:
         t.start()
