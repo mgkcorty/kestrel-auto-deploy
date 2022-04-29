@@ -23,6 +23,9 @@ DOTNET_PATH = CONFIG['DotNetPath']
 REMOTE_FOLDER = CONFIG['RemoteFolder']
 LOCAL_FOLDER = CONFIG['LocalFolder']
 
+REMOTE_VERSION_NUMBER_FILE = os.path.join(REMOTE_FOLDER, VERSION_NUMBER_FILE_NAME)
+LOCAL_VERSION_NUMBER_FILE = os.path.join(LOCAL_FOLDER, VERSION_NUMBER_FILE_NAME)
+
 
 class ProcessInfo:
     pid = ""
@@ -45,6 +48,15 @@ def copy3(src, dst, *, follow_symlinks=True):
     shutil.copyfile(src, dst, follow_symlinks=follow_symlinks)
     os.utime(dst, (os.path.getatime(dst), os.path.getmtime(dst)))
     return dst
+
+
+def is_dirty_app_version():
+    if not os.path.exists(REMOTE_VERSION_NUMBER_FILE):
+        raise Exception(f'{VERSION_NUMBER_FILE_NAME} not found in remote folder {REMOTE_VERSION_NUMBER_FILE}.')
+    remote_last_modify_time = os.path.getmtime(REMOTE_VERSION_NUMBER_FILE)
+    local_last_modify_time = os.path.getmtime(LOCAL_VERSION_NUMBER_FILE) if os.path.exists(
+        LOCAL_VERSION_NUMBER_FILE) else 0
+    return remote_last_modify_time > local_last_modify_time
 
 
 def initialize():
@@ -134,10 +146,9 @@ def get_process_infos(name):
 
 
 def process_runner():
-    local_version_number_file = os.path.join(LOCAL_FOLDER, VERSION_NUMBER_FILE_NAME)
-    if not os.path.exists(local_version_number_file):
+    if not os.path.exists(LOCAL_VERSION_NUMBER_FILE):
         return
-    file = open(local_version_number_file, 'r')
+    file = open(LOCAL_VERSION_NUMBER_FILE, 'r')
     current_version = file.read()
     file.close()
     infos = get_process_infos(EXECUTABLE_FILE_NAME)
@@ -190,31 +201,26 @@ def copytree(src, dst):
 
 
 def version_update():
-    remote_version_number_file = os.path.join(REMOTE_FOLDER, VERSION_NUMBER_FILE_NAME)
-    local_version_number_file = os.path.join(LOCAL_FOLDER, VERSION_NUMBER_FILE_NAME)
-    if not os.path.exists(remote_version_number_file):
-        raise Exception(f'{VERSION_NUMBER_FILE_NAME} not found in remote folder {remote_version_number_file}.')
-    remote_last_modify_time = os.path.getmtime(remote_version_number_file)
-    local_last_modify_time = os.path.getmtime(local_version_number_file) if os.path.exists(
-        local_version_number_file) else 0
-    if remote_last_modify_time > local_last_modify_time:
-        file = open(remote_version_number_file, 'r')
-        current_version = file.read()
-        file.close()
-        if not os.path.exists(os.path.join(REMOTE_FOLDER, current_version)):
-            raise Exception(f'{current_version} not found in remote folder.')
-        if not os.path.exists(os.path.join(LOCAL_FOLDER, current_version)):
-            os.makedirs(os.path.join(LOCAL_FOLDER, current_version))
-        copytree(os.path.join(REMOTE_FOLDER, current_version), os.path.join(LOCAL_FOLDER, current_version))
-        copy3(os.path.join(REMOTE_FOLDER, VERSION_NUMBER_FILE_NAME),
-              os.path.join(LOCAL_FOLDER, VERSION_NUMBER_FILE_NAME))
-        infos = get_process_infos(EXECUTABLE_FILE_NAME)
-        for info in infos:
-            os.kill(int(info.pid), signal.SIGTERM)
-        directories = [d for d in os.listdir(LOCAL_FOLDER) if os.path.isdir(os.path.join(LOCAL_FOLDER, d))]
-        for folder in directories:
-            if os.path.join(LOCAL_FOLDER, folder) != os.path.join(LOCAL_FOLDER, current_version):
-                shutil.rmtree(os.path.join(LOCAL_FOLDER, folder), ignore_errors=False, onerror=None)
+    if not is_dirty_app_version():
+        return
+
+    file = open(REMOTE_VERSION_NUMBER_FILE, 'r')
+    current_version = file.read()
+    file.close()
+    if not os.path.exists(os.path.join(REMOTE_FOLDER, current_version)):
+        raise Exception(f'{current_version} not found in remote folder.')
+    if not os.path.exists(os.path.join(LOCAL_FOLDER, current_version)):
+        os.makedirs(os.path.join(LOCAL_FOLDER, current_version))
+    copytree(os.path.join(REMOTE_FOLDER, current_version), os.path.join(LOCAL_FOLDER, current_version))
+    copy3(os.path.join(REMOTE_FOLDER, VERSION_NUMBER_FILE_NAME),
+          os.path.join(LOCAL_FOLDER, VERSION_NUMBER_FILE_NAME))
+    infos = get_process_infos(EXECUTABLE_FILE_NAME)
+    for info in infos:
+        os.kill(int(info.pid), signal.SIGTERM)
+    directories = [d for d in os.listdir(LOCAL_FOLDER) if os.path.isdir(os.path.join(LOCAL_FOLDER, d))]
+    for folder in directories:
+        if os.path.join(LOCAL_FOLDER, folder) != os.path.join(LOCAL_FOLDER, current_version):
+            shutil.rmtree(os.path.join(LOCAL_FOLDER, folder), ignore_errors=False, onerror=None)
 
 
 def process_runner_loop():
