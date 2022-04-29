@@ -8,7 +8,6 @@ from subprocess import check_output
 from threading import Thread
 from time import sleep
 
-
 WINDOWS = 'Windows'
 LINUX = 'Linux'
 
@@ -30,7 +29,7 @@ class ProcessInfo:
     name = ""
     version = ""
     command_line = ""
-    
+
     def __init__(self, pid, name, version, command_line):
         self.pid = pid
         self.name = name
@@ -48,37 +47,16 @@ def copy3(src, dst, *, follow_symlinks=True):
     return dst
 
 
-def linux_mount_remote_folder():
-    if CURRENT_PLATFORM != LINUX:
-        return
-    
-    folder_to_mount = CONFIG['FolderToMount']
-    mounted_folder = CONFIG['MountedFolder']
-    
-    is_unc = folder_to_mount.startswith(r'//') or folder_to_mount.startswith(r'\\')
-    
-    if not is_unc:
-        return
-    
-    mount_result = subprocess.getoutput(
-        f'sudo mount.cifs "{folder_to_mount}" "{mounted_folder}" -o user=root,password=guest,dir_mode=0777,file_mode=0777')
-    if not mount_result:
-        return
-    
-    raise Exception(f"Mount error. {mount_result}")
-
-
 def initialize():
     if CURRENT_PLATFORM != WINDOWS and CURRENT_PLATFORM != LINUX:
         raise Exception('Platform is not supported.')
-    
+
     if CURRENT_PLATFORM == LINUX:
         user = os.getenv("SUDO_USER")
         if user is None:
             user = os.getenv("USER")
         if user is None:
             raise Exception('Current user is None.')
-        linux_mount_remote_folder()
 
 
 def represents_int(s):
@@ -97,7 +75,7 @@ def get_process_infos(name):
     if CURRENT_PLATFORM == WINDOWS:
         lines = subprocess.getoutput('wmic process where caption="dotnet.exe" get Commandline, ProcessId').split('\n')
         lines = list(map(lambda x: " ".join(x.strip().split()), lines))
-        
+
         def get_process_info(s):
             i = len(s) - 1
             start_index = -1
@@ -111,14 +89,14 @@ def get_process_infos(name):
                 command_arguments = s[:start_index - 1]
                 handle_utility_path = os.path.dirname(os.path.realpath(__file__))
                 version_result = subprocess.run([f"handle", "-p", "dotnet.exe"], cwd=handle_utility_path,
-                                               universal_newlines=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+                                                universal_newlines=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
                 version_result = list(filter(lambda x: x, version_result.stdout.split('\n')))
                 version_result = remove_spaces([version_result[5]])[0]
                 length = len(version_result)
                 version = version_result[length - 7:]
                 return ProcessInfo(pid, name, version, command_arguments)
             return None
-        
+
         process_infos = list(filter(lambda pair: pair is not None, map(lambda x: get_process_info(x), lines)))
         return process_infos
     elif CURRENT_PLATFORM == LINUX:
@@ -130,7 +108,7 @@ def get_process_infos(name):
             if (e.returncode != 1):
                 raise
             return process_infos
-        
+
         def get_process_info(s):
             i = 0
             end_index = -1
@@ -148,7 +126,7 @@ def get_process_infos(name):
                 version = version_result[length - 8:]
                 return ProcessInfo(pid, name, version, command_arguments)
             return None
-        
+
         process_infos = list(filter(lambda pair: pair is not None, map(lambda x: get_process_info(x), lines)))
         return process_infos
     else:
@@ -174,10 +152,11 @@ def process_runner():
             print(f"Process killed: {info.pid}")
     if same_version_process is not None:
         return
-    
+
     site_directory = os.path.join(LOCAL_FOLDER, current_version)
     if CURRENT_PLATFORM == WINDOWS:
-        process = subprocess.run([DOTNET_PATH, EXECUTABLE_FILE_NAME], cwd=site_directory, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+        process = subprocess.run([DOTNET_PATH, EXECUTABLE_FILE_NAME], cwd=site_directory, stdout=subprocess.PIPE,
+                                 stderr=subprocess.PIPE,
                                  creationflags=subprocess.DETACHED_PROCESS | subprocess.CREATE_NEW_PROCESS_GROUP)
     elif CURRENT_PLATFORM == LINUX:
         print(f"Process starting: dotnet {site_directory}")
@@ -216,7 +195,8 @@ def version_update():
     if not os.path.exists(remote_version_number_file):
         raise Exception(f'{VERSION_NUMBER_FILE_NAME} not found in remote folder {remote_version_number_file}.')
     remote_last_modify_time = os.path.getmtime(remote_version_number_file)
-    local_last_modify_time = os.path.getmtime(local_version_number_file) if os.path.exists(local_version_number_file) else 0
+    local_last_modify_time = os.path.getmtime(local_version_number_file) if os.path.exists(
+        local_version_number_file) else 0
     if remote_last_modify_time > local_last_modify_time:
         file = open(remote_version_number_file, 'r')
         current_version = file.read()
@@ -226,7 +206,8 @@ def version_update():
         if not os.path.exists(os.path.join(LOCAL_FOLDER, current_version)):
             os.makedirs(os.path.join(LOCAL_FOLDER, current_version))
         copytree(os.path.join(REMOTE_FOLDER, current_version), os.path.join(LOCAL_FOLDER, current_version))
-        copy3(os.path.join(REMOTE_FOLDER, VERSION_NUMBER_FILE_NAME), os.path.join(LOCAL_FOLDER, VERSION_NUMBER_FILE_NAME))
+        copy3(os.path.join(REMOTE_FOLDER, VERSION_NUMBER_FILE_NAME),
+              os.path.join(LOCAL_FOLDER, VERSION_NUMBER_FILE_NAME))
         infos = get_process_infos(EXECUTABLE_FILE_NAME)
         for info in infos:
             os.kill(int(info.pid), signal.SIGTERM)
@@ -256,7 +237,7 @@ def version_update_loop():
 
 def main():
     initialize()
-    
+
     threads = [Thread(target=version_update_loop, args=()), Thread(target=process_runner_loop, args=())]
     for t in threads:
         t.start()
