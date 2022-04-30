@@ -2,8 +2,6 @@
 	"ExecutableFileName":"MySite.dll",
 	"VersionNumberFileName":"versionNumber.txt",
 	"DotNetPath":"/home/pi/dotnet-arm32/dotnet",
-	"FolderToMount":"//192.168.1.1/Seagate Expansion Drive",
-	"MountedFolder":"/home/pi/Shared/Seagate Expansion Drive",
 	"LocalFolder":"/home/pi/Desktop/MySite",
 	"RemoteFolder":"/home/pi/Shared/Seagate Expansion Drive/MySite"
 }
