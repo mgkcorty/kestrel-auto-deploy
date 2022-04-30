@@ -135,17 +135,17 @@ def process_runner():
     for info in infos:
         if same_version_process != info:
             os.kill(int(info.pid), signal.SIGTERM)
-            print(f"Process killed: {info.pid}")
+            print(f"Process killed -> {info.pid}")
     if same_version_process is not None:
         return
 
     site_directory = os.path.join(LOCAL_FOLDER, current_version)
+    print(f"Process starting: dotnet {site_directory}")
     if CURRENT_PLATFORM == WINDOWS:
         process = subprocess.run([DOTNET_PATH, EXECUTABLE_FILE_NAME], cwd=site_directory, stdout=subprocess.PIPE,
                                  stderr=subprocess.PIPE,
                                  creationflags=subprocess.DETACHED_PROCESS | subprocess.CREATE_NEW_PROCESS_GROUP)
     else:
-        print(f"Process starting: dotnet {site_directory}")
         process = subprocess.run([DOTNET_PATH, EXECUTABLE_FILE_NAME], cwd=site_directory, stdout=subprocess.PIPE,
                                  stderr=subprocess.PIPE, preexec_fn=os.setpgrp)
     print(process.stdout)
@@ -180,6 +180,7 @@ def version_update():
     file = open(REMOTE_VERSION_NUMBER_FILE, 'r')
     current_version = file.read()
     file.close()
+    print(f"Start updating -> {EXECUTABLE_FILE_NAME}:{current_version}")
     if not os.path.exists(os.path.join(REMOTE_FOLDER, current_version)):
         raise Exception(f'{current_version} not found in remote folder.')
     if not os.path.exists(os.path.join(LOCAL_FOLDER, current_version)):
@@ -190,10 +191,12 @@ def version_update():
     infos = get_process_list(EXECUTABLE_FILE_NAME)
     for info in infos:
         os.kill(int(info.pid), signal.SIGTERM)
+        print(f"Process killed -> {info.pid}")
     directories = [d for d in os.listdir(LOCAL_FOLDER) if os.path.isdir(os.path.join(LOCAL_FOLDER, d))]
     for folder in directories:
         if os.path.join(LOCAL_FOLDER, folder) != os.path.join(LOCAL_FOLDER, current_version):
             shutil.rmtree(os.path.join(LOCAL_FOLDER, folder), ignore_errors=False, onerror=None)
+    print(f"App is updated -> {EXECUTABLE_FILE_NAME}:{current_version}")
 
 
 def process_runner_loop():
