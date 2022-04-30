@@ -128,7 +128,6 @@ def process_runner():
     file.close()
     infos = get_process_list(EXECUTABLE_FILE_NAME)
     same_version_processes = list(filter(lambda x: x.version == current_version, infos))
-    print(len(same_version_processes))
     if len(same_version_processes) > 0:
         same_version_process = same_version_processes[0]
     else:
