@@ -103,10 +103,15 @@ def get_process_info(process_text):
 
 
 def get_process_list(process_name):
-    if CURRENT_PLATFORM == WINDOWS:
-        terminal_process_list = subprocess.getoutput('wmic process where caption="dotnet.exe" get Commandline, ProcessId').split('\n')
-    else:
-        terminal_process_list = check_output(["ps -eo pid,cmd | grep [d]otnet"], shell=True, universal_newlines=True).split('\n')
+    try:
+        if CURRENT_PLATFORM == WINDOWS:
+            terminal_process_list = subprocess.getoutput('wmic process where caption="dotnet.exe" get Commandline, ProcessId').split('\n')
+        else:
+            terminal_process_list = check_output(["ps -eo pid,cmd | grep [d]otnet"], shell=True, universal_newlines=True).split('\n')
+    except subprocess.CalledProcessError as e:
+        if (e.returncode != 1): # 1 - No lines were selected.
+            raise
+        return []
     terminal_process_list = remove_spaces(terminal_process_list)
     process_info_list = list(map(lambda x: get_process_info(x), terminal_process_list))
     result = list(filter(lambda p: p is not None and p.name == process_name, process_info_list))
